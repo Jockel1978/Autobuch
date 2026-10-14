@@ -45,6 +45,8 @@ body.panel .stat b{font-size:2.2rem}
   <label>E-Mail</label><input id="lmail" type="email" autocomplete="username">
   <label>Passwort</label><input id="lpw" type="password" autocomplete="current-password">
   <button id="lbtn">Anmelden</button>
+  <button id="rbtn" class="sec">Neu registrieren</button>
+  <button id="gbtn" class="sec">Mit Google anmelden</button>
   <div id="lerr" class="hint"></div>
 </div>
 
@@ -280,8 +282,10 @@ if(USE_FB){
     db.collection('ladungen').onSnapshot(snap=>{ items=snap.docs.map(d=>({...d.data(),id:d.id})); render(); },
       err=>{ $('mode').textContent='Fehler: '+err.message; });
   });
-  $('lbtn').onclick=()=>auth.signInWithEmailAndPassword($('lmail').value,$('lpw').value)
-    .catch(e=>$('lerr').textContent='Login fehlgeschlagen: '+e.code);
+  const lerr = e => $('lerr').textContent = 'Fehlgeschlagen: '+e.code;
+  $('lbtn').onclick=()=>auth.signInWithEmailAndPassword($('lmail').value,$('lpw').value).catch(lerr);
+  $('rbtn').onclick=()=>auth.createUserWithEmailAndPassword($('lmail').value,$('lpw').value).catch(lerr);
+  $('gbtn').onclick=()=>auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(lerr);
 } else {
   $('mode').textContent='Lokaler Testmodus – keine Synchronisation zwischen Geräten (Firebase-Config fehlt).';
   startApp(); store.loadLocal();
