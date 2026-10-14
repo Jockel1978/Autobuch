@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Autobuch">
+<meta name="theme-color" content="#0f172a">
+<title>Autobuch</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--tx:#e2e8f0;--mut:#94a3b8;--acc:#22c55e;--bad:#ef4444;--bd:#334155}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,sans-serif;padding:env(safe-area-inset-top) 12px 40px}
+main{max-width:720px;margin:0 auto}
+h1{font-size:1.3rem;margin:14px 0}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:8px}
+.stat b{display:block;font-size:1.4rem;color:var(--acc)}
+.stat span{color:var(--mut);font-size:.8rem}
+label{display:block;font-size:.8rem;color:var(--mut);margin:8px 0 3px}
+input,select,button{width:100%;font:inherit;padding:11px;border-radius:10px;border:1px solid var(--bd);background:#0b1220;color:var(--tx)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{background:var(--acc);color:#04210f;font-weight:700;border:0;margin-top:12px}
+button.sec{background:transparent;color:var(--mut);border:1px solid var(--bd)}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs button{margin:0;padding:10px 6px;background:var(--card);color:var(--mut);border:1px solid var(--bd);font-weight:600}
+.tabs button.on{background:var(--acc);color:#04210f;border-color:var(--acc)}
+.item{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--bd);cursor:pointer}
+.item:first-child{border-top:0}
+.item small{color:var(--mut);display:block}
+.r{text-align:right;white-space:nowrap}
+.hint{color:var(--mut);font-size:.8rem}
+.hidden{display:none!important}
+.chk{display:flex;align-items:center;gap:10px;margin-top:12px}
+.chk input{width:auto}
+body.panel{font-size:22px}
+body.panel .stat b{font-size:2.2rem}
+</style>
+</head>
+<body>
+<main>
+<h1 id="h1">🚗 Autobuch</h1>
+
+<div id="login" class="card hidden">
+  <label>E-Mail</label><input id="lmail" type="email" autocomplete="username">
+  <label>Passwort</label><input id="lpw" type="password" autocomplete="current-password">
+  <button id="lbtn">Anmelden</button>
+  <div id="lerr" class="hint"></div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="tabs" id="tabs"></div>
+  <div id="stats"></div>
+
+  <div class="card" id="formcard">
+    <b id="ftitle"></b>
+    <div class="row">
+      <div><label>Datum/Uhrzeit</label><input id="ts" type="datetime-local"></div>
+      <div><label>Wer</label><select id="wer"><option>Jörg</option><option>Peggy</option></select></div>
+    </div>
+    <div class="row">
+      <div><label id="lmenge">Menge</label><input id="menge" type="number" step="0.01" inputmode="decimal"></div>
+      <div><label>Kosten (€)</label><input id="eur" type="number" step="0.01" inputmode="decimal"></div>
+    </div>
+    <div class="row">
+      <div><label>km-Stand</label><input id="km" type="number" inputmode="numeric"></div>
+      <div class="only-ev"><label>Ort</label>
+        <select id="ort"><option>Zuhause</option><option>Öffentlich AC</option><option>Öffentlich DC (Schnell)</option><option>Arbeit</option><option>Sonstiges</option></select></div>
+      <div class="only-fuel"><label>Sorte</label>
+        <select id="sorte"><option>Super E10</option><option>Super 95</option><option>Super Plus</option><option>Diesel</option></select></div>
+    </div>
+    <div class="row only-ev">
+      <div><label>Akku vorher (%)</label><input id="s0" type="number" min="0" max="100" inputmode="numeric"></div>
+      <div><label>Akku nachher (%)</label><input id="s1" type="number" min="0" max="100" inputmode="numeric"></div>
+    </div>
+    <label class="chk only-fuel"><input id="voll" type="checkbox" checked> Vollgetankt (für genauen Verbrauch)</label>
+    <label>Notiz</label><input id="note" type="text">
+    <button id="save">Speichern</button>
+    <button id="cancel" class="sec hidden">Abbrechen</button>
+    <button id="del" class="sec hidden" style="color:var(--bad)">Löschen</button>
+  </div>
+
+  <div class="card"><b id="ltitle">Verlauf</b><div id="list"></div></div>
+  <div class="hint" id="mode"></div>
+</div>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// ===== HIER Firebase-Web-Config eintragen (leer = lokaler Testmodus ohne Sync) =====
+const CFG = { apiKey:"", authDomain:"", projectId:"", appId:"" };
+// ===== Fahrzeuge: Namen/Typ hier anpassen. typ: 'ev' (Strom) oder 'fuel' (Sprit) =====
+const VEHICLES = [
+  { id:'raval',    name:'Cupra Raval', typ:'ev',   icon:'⚡', wer:'Peggy' },
+  { id:'benziner', name:'Benziner',    typ:'fuel', icon:'⛽', wer:'Jörg'  }
+];
+// ===================================================================================
+const USE_FB = !!CFG.apiKey;
+const P = new URLSearchParams(location.search);
+const PANEL = P.has('panel');
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let items = [], editId = null, db = null;
+let cur = P.get('fz') || localStorage.getItem('autobuch_fz') || VEHICLES[0].id;
+if (cur!=='all' && !VEHICLES.some(v=>v.id===cur)) cur = VEHICLES[0].id;
+if (PANEL) document.body.classList.add('panel');
+
+const fmt = (n,d=1) => n==null||isNaN(n) ? '–' : n.toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d});
+const toLocalInput = d => { const z=new Date(d.getTime()-d.getTimezoneOffset()*60000); return z.toISOString().slice(0,16); };
+const veh = id => VEHICLES.find(v=>v.id===id) || VEHICLES[0];
+const fzOf = x => x.fz || VEHICLES[0].id;          // alte Einträge ohne Fahrzeug -> erstes Auto
+const amt = x => x.menge ?? x.kwh ?? 0;             // kompatibel mit v1 (kwh)
+const unit = t => t==='ev' ? 'kWh' : 'L';
+
+// ---------- Speicher ----------
+const store = {
+  async add(o){ if(USE_FB) await db.collection('ladungen').add(o); else { o.id=String(Date.now()); items.push(o); this.persist(); } },
+  async upd(id,o){ if(USE_FB) await db.collection('ladungen').doc(id).set(o); else { items=items.map(x=>x.id===id?{...o,id}:x); this.persist(); } },
+  async rm(id){ if(USE_FB) await db.collection('ladungen').doc(id).delete(); else { items=items.filter(x=>x.id!==id); this.persist(); } },
+  persist(){ localStorage.setItem('ladebuch',JSON.stringify(items)); render(); },
+  loadLocal(){ try{ items=JSON.parse(localStorage.getItem('ladebuch')||'[]'); }catch(e){ items=[]; } render(); }
+};
+
+// ---------- Auswertung ----------
+function statsFor(list, typ){
+  const q = list.reduce((a,x)=>a+(+amt(x)||0),0);
+  const eur = list.reduce((a,x)=>a+(+x.eur||0),0);
+  const pr = list.filter(x=>amt(x)>0 && x.eur>0);
+  const q2 = pr.reduce((a,x)=>a+amt(x),0), e2 = pr.reduce((a,x)=>a+x.eur,0);
+  // Basis für Verbrauch: E-Auto = alle km-Einträge, Benziner = nur Volltankungen
+  let ks = list.filter(x=>x.km>0).sort((a,b)=>a.km-b.km);
+  if(typ==='fuel') ks = ks.filter(x=>x.voll!==false);
+  let cons=null, cpk=null;
+  if(ks.length>=2){
+    const f=ks[0], l=ks[ks.length-1], dkm=l.km-f.km;
+    if(dkm>0){
+      const seg = list.filter(x=>x.km>f.km && x.km<=l.km);
+      cons = seg.reduce((a,x)=>a+(+amt(x)||0),0)/dkm*100;
+      cpk  = seg.reduce((a,x)=>a+(+x.eur||0),0)/dkm*100;
+    }
+  }
+  const now=new Date(), mk=now.getFullYear()+'-'+now.getMonth();
+  const month = list.filter(x=>{const d=new Date(x.ts);return d.getFullYear()+'-'+d.getMonth()===mk;}).reduce((a,x)=>a+(+x.eur||0),0);
+  const lastKm = list.filter(x=>x.km>0).reduce((a,x)=>Math.max(a,x.km),0)||null;
+  return {n:list.length,q,eur,ppu:q2>0?e2/q2:null,cons,cpk,month,lastKm};
+}
+const statCell = (v,l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
+function statBlock(v,s){
+  const u=unit(v.typ);
+  return `<div class="stats">`+
+    statCell(fmt(s.q,0)+' '+u, (v.typ==='ev'?'geladen':'getankt')+` (${s.n}×)`)+
+    statCell(fmt(s.eur,2)+' €','Kosten gesamt')+
+    statCell(fmt(s.ppu,3)+' €','Ø Preis pro '+u)+
+    statCell(fmt(s.cons,1)+' '+u,'pro 100 km (ca.)')+
+    statCell(fmt(s.cpk,2)+' €','Kosten pro 100 km')+
+    statCell(fmt(s.month,2)+' €','diesen Monat')+`</div>`;
+}
+
+// ---------- Anzeige ----------
+function itemHtml(x, tag){
+  const v=veh(fzOf(x)), u=unit(v.typ), d=new Date(x.ts);
+  const a=amt(x);
+  const extra = v.typ==='ev'
+    ? [x.ort, (x.s0!=null&&x.s1!=null)?`${x.s0}→${x.s1} %`:null]
+    : [x.sorte, x.voll===false?'Teilbetankung':null];
+  const pp = a>0&&x.eur>0 ? fmt(x.eur/a,3)+' €/'+u : null;
+  const meta = [tag?v.icon+' '+v.name:null, x.wer, ...extra, pp, x.note?esc(x.note):null].filter(Boolean).join(' · ');
+  return `<div class="item" data-id="${x.id}"><div>${d.toLocaleDateString('de-DE')} ${d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}
+    <small>${meta}</small></div>
+    <div class="r"><b>${fmt(a,1)} ${u}</b><small>${x.eur!=null?fmt(x.eur,2)+' €':''}${x.km?' · '+fmt(x.km,0)+' km':''}</small></div></div>`;
+}
+
+function render(){
+  items.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
+  // Tabs
+  $('tabs').innerHTML = PANEL ? '' :
+    VEHICLES.map(v=>`<button data-t="${v.id}" class="${cur===v.id?'on':''}">${v.icon} ${v.name}</button>`).join('')+
+    `<button data-t="all" class="${cur==='all'?'on':''}">Gesamt</button>`;
+  const showForm = !PANEL && cur!=='all';
+  $('formcard').classList.toggle('hidden',!showForm);
+
+  if(PANEL){
+    $('stats').innerHTML = VEHICLES.map(v=>{
+      const s=statsFor(items.filter(x=>fzOf(x)===v.id),v.typ), u=unit(v.typ);
+      return `<div class="card"><b>${v.icon} ${v.name}</b><div class="stats">`+
+        statCell(fmt(s.cons,1)+' '+u,'pro 100 km')+statCell(fmt(s.month,2)+' €','diesen Monat')+
+        statCell(s.lastKm?fmt(s.lastKm,0)+' km':'–','letzter km-Stand')+statCell(fmt(s.eur,0)+' €','Kosten gesamt')+`</div></div>`;
+    }).join('');
+    $('ltitle').textContent='Zuletzt';
+    $('list').innerHTML = items.slice(0,6).map(x=>itemHtml(x,true)).join('') || '<div class="hint">Noch nichts drin.</div>';
+    return;
+  }
+  if(cur==='all'){
+    const tot=items.reduce((a,x)=>a+(+x.eur||0),0);
+    const now=new Date(), mk=now.getFullYear()+'-'+now.getMonth();
+    const mon=items.filter(x=>{const d=new Date(x.ts);return d.getFullYear()+'-'+d.getMonth()===mk;}).reduce((a,x)=>a+(+x.eur||0),0);
+    $('stats').innerHTML = `<div class="card"><b>Beide Autos</b><div class="stats">`+
+      statCell(fmt(tot,2)+' €','Kosten gesamt')+statCell(fmt(mon,2)+' €','diesen Monat')+
+      VEHICLES.map(v=>statCell(fmt(items.filter(x=>fzOf(x)===v.id).reduce((a,x)=>a+(+x.eur||0),0),2)+' €',v.icon+' '+v.name)).join('')+
+      `</div></div>`;
+    $('ltitle').textContent='Verlauf (alle)';
+    $('list').innerHTML = items.map(x=>itemHtml(x,true)).join('') || '<div class="hint">Noch nichts drin.</div>';
+    return;
+  }
+  const v=veh(cur), mine=items.filter(x=>fzOf(x)===v.id);
+  $('stats').innerHTML = `<div class="card"><b>${v.icon} ${v.name}</b>${statBlock(v,statsFor(mine,v.typ))}</div>`;
+  $('ltitle').textContent='Verlauf';
+  $('list').innerHTML = mine.map(x=>itemHtml(x,false)).join('') || '<div class="hint">Noch nichts drin.</div>';
+}
+
+// ---------- Formular ----------
+function applyType(){
+  if(cur==='all') return;
+  const v=veh(cur);
+  document.querySelectorAll('.only-ev').forEach(e=>e.classList.toggle('hidden',v.typ!=='ev'));
+  document.querySelectorAll('.only-fuel').forEach(e=>e.classList.toggle('hidden',v.typ!=='fuel'));
+  $('lmenge').textContent = v.typ==='ev' ? 'geladen (kWh)' : 'getankt (Liter)';
+}
+function resetForm(){
+  editId=null;
+  if(cur==='all') return;
+  const v=veh(cur);
+  applyType();
+  $('ftitle').textContent = v.typ==='ev' ? 'Neue Ladung' : 'Neue Tankung';
+  $('ts').value=toLocalInput(new Date());
+  $('wer').value=v.wer;
+  ['menge','eur','s0','s1','km','note'].forEach(i=>$(i).value='');
+  $('voll').checked=true;
+  $('cancel').classList.add('hidden'); $('del').classList.add('hidden');
+}
+function setCur(id){
+  cur=id; localStorage.setItem('autobuch_fz',id);
+  resetForm(); render();
+}
+$('tabs').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) setCur(b.dataset.t); });
+
+$('list').addEventListener('click',e=>{
+  if(PANEL) return;
+  const el=e.target.closest('.item'); if(!el) return;
+  const x=items.find(i=>i.id===el.dataset.id); if(!x) return;
+  if(cur!==fzOf(x)){ cur=fzOf(x); localStorage.setItem('autobuch_fz',cur); render(); }
+  applyType();
+  const v=veh(cur);
+  editId=x.id; $('ftitle').textContent='Eintrag bearbeiten';
+  $('ts').value=toLocalInput(new Date(x.ts)); $('wer').value=x.wer||v.wer;
+  $('menge').value=amt(x)||''; $('eur').value=x.eur??''; $('km').value=x.km??''; $('note').value=x.note||'';
+  if(v.typ==='ev'){ $('ort').value=x.ort||'Zuhause'; $('s0').value=x.s0??''; $('s1').value=x.s1??''; }
+  else { $('sorte').value=x.sorte||'Super E10'; $('voll').checked=x.voll!==false; }
+  $('cancel').classList.remove('hidden'); $('del').classList.remove('hidden');
+  window.scrollTo({top:0,behavior:'smooth'});
+});
+const num = id => $(id).value===''?null:+$(id).value;
+$('save').onclick=async()=>{
+  const v=veh(cur);
+  if(!(num('menge')>0)){ alert((v.typ==='ev'?'kWh':'Liter')+' fehlen'); return; }
+  const o={fz:v.id,ts:new Date($('ts').value).toISOString(),wer:$('wer').value,menge:num('menge'),eur:num('eur'),km:num('km'),note:$('note').value.trim()};
+  if(v.typ==='ev'){ o.ort=$('ort').value; o.s0=num('s0'); o.s1=num('s1'); }
+  else { o.sorte=$('sorte').value; o.voll=$('voll').checked; }
+  try{ if(editId) await store.upd(editId,o); else await store.add(o); resetForm(); }
+  catch(e){ alert('Speichern fehlgeschlagen: '+e.message); }
+};
+$('cancel').onclick=resetForm;
+$('del').onclick=async()=>{ if(confirm('Wirklich löschen?')){ await store.rm(editId); resetForm(); } };
+
+// ---------- Start ----------
+function startApp(){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); resetForm(); render(); }
+
+if(USE_FB){
+  firebase.initializeApp(CFG);
+  db=firebase.firestore();
+  db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+  const auth=firebase.auth();
+  $('mode').textContent='Sync: Firebase';
+  auth.onAuthStateChanged(u=>{
+    if(!u){ $('login').classList.remove('hidden'); $('app').classList.add('hidden'); return; }
+    startApp();
+    db.collection('ladungen').onSnapshot(snap=>{ items=snap.docs.map(d=>({...d.data(),id:d.id})); render(); },
+      err=>{ $('mode').textContent='Fehler: '+err.message; });
+  });
+  $('lbtn').onclick=()=>auth.signInWithEmailAndPassword($('lmail').value,$('lpw').value)
+    .catch(e=>$('lerr').textContent='Login fehlgeschlagen: '+e.code);
+} else {
+  $('mode').textContent='Lokaler Testmodus – keine Synchronisation zwischen Geräten (Firebase-Config fehlt).';
+  startApp(); store.loadLocal();
+}
+</script>
+</body>
+</html>
