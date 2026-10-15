@@ -6,6 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Autobuch">
 <meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Autobuch</title>
 <style>
 :root{--bg:#0f172a;--card:#1e293b;--tx:#e2e8f0;--mut:#94a3b8;--acc:#22c55e;--bad:#ef4444;--bd:#334155}
@@ -266,6 +269,9 @@ $('save').onclick=async()=>{
 };
 $('cancel').onclick=resetForm;
 $('del').onclick=async()=>{ if(confirm('Wirklich löschen?')){ await store.rm(editId); resetForm(); } };
+
+// ---------- PWA ----------
+if('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
 // ---------- Start ----------
 function startApp(){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); resetForm(); render(); }
